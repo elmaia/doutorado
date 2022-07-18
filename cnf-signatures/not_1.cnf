@@ -1,0 +1,9 @@
+c CNF-Signature NOT_1
+c 
+c $p 1 1
+c $m (1,2)
+c $u 1
+c $u 2
+p cnf 2 2
+1 2 0
+-1 -2 0

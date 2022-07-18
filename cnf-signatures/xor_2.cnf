@@ -1,0 +1,12 @@
+c CNF-Signature XOR_2
+c 
+c $p 2 1
+c $m (1,2,3)
+c $u 1
+c $u 2
+c $u 3
+p cnf 3 4
+1 2 -3 0
+-1 2 3 0
+1 -2 3 0
+-1 -2 -3 0

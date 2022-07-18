@@ -1,0 +1,13 @@
+c CNF-Signature NOT-NOR_2
+c 
+c $p 2 1
+c $m (1,2,3)
+c $i 1
+c $i 2
+c $o 3
+p cnf 4 5
+-1 -4 0
+1 4 0
+-4 -3 0
+-2 -3 0
+4 2 3 0
