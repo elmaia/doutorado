@@ -21,7 +21,7 @@ namespace cnf2img
       Console.Error.WriteLine(new String('-', 50));
       Console.Error.WriteLine("arquivoCNF:  Caminho do arquivo que contem a descricao do arquivo CNF-DIMACS");
       Console.Error.WriteLine("arquivoBMP:  Opcional. Caminho para o arquivo de saida da imagem do circuito.");
-      Console.Error.WriteLine("             Se omitido, será gerado um arquivo chamado saida.bmp no diretorio atual.");
+      Console.Error.WriteLine("             Se omitido, serão gerados dois arquivos chamados saida.bw.bmp e saida.cl.bmp no diretorio atual.");
       Console.Error.WriteLine("             Nao adicione a extensao .bmp. Ela sera adicionada automaticamente!");
       Console.Error.WriteLine("dimensao..:  Opcional. Imagem redimensionada para um quadrado <dimensao>x<dimensao>");
       Console.Error.WriteLine(new String('-', 80));
@@ -31,7 +31,7 @@ namespace cnf2img
     {
 
       string nomeArquivoCNF;
-      string nomeArquivoBMP = "saida.bmp";
+      string nomeArquivoBMP = "saida";
       int dimensao = 0;
 
       // Verifica se os parâmetros
@@ -62,26 +62,46 @@ namespace cnf2img
         Console.WriteLine(cnf.comment);
       }
 
-      // Gera o BMP e salva no arquivo especificado
-      Console.WriteLine("Gerando arquivo BMP...");
-      Bitmap bmp = Bmp.generateFromCNF(cnf);
-      bmp.Save(nomeArquivoBMP + ".original.bmp", ImageFormat.Bmp);
+      // Interação com o usuário
+      Console.WriteLine("Gerando os arquivos BMPs...");
 
-      // Gera o binário
-      Console.WriteLine("Gerando arquivo BIN...");
-      BinaryWriter bw = Bin.generateFromCNF(cnf, new FileStream(nomeArquivoBMP + ".bin", FileMode.Create));
+      // Gera o BMP em escala de cinza e salva no arquivo especificado
+      Bitmap bmpGray = Bmp.generateGrayFromCNF(cnf);
+      bmpGray.Save(nomeArquivoBMP + ".bw.original.bmp", ImageFormat.Bmp);
+
+      // Gera o BMP colorido e salva no arquivo especificado
+      Bitmap bmpColor = Bmp.generateColorFromCNF(cnf);
+      bmpColor.Save(nomeArquivoBMP + ".cl.original.bmp", ImageFormat.Bmp);
+
+      // Interação com o usuário
+      Console.WriteLine("Gerando os arquivos BIN...");
+
+      // Gera o binário em escala de cinza
+      BinaryWriter bw = Bin.generateGrayFromCNF(cnf, new FileStream(nomeArquivoBMP + ".bw.bin", FileMode.Create));
       bw.Flush();
       bw.Close();
 
+      // Gera o binário colorido
+      BinaryWriter cl = Bin.generateColorFromCNF(cnf, new FileStream(nomeArquivoBMP + ".cl.bin", FileMode.Create));
+      cl.Flush();
+      cl.Close();
+
       if (dimensao != 0)
       {
-        Console.WriteLine("Gerando arquivo BMP redimensionado...");
-        Bitmap bmpResized = new Bitmap(bmp, new Size(dimensao, dimensao));
-        bmpResized.Save(nomeArquivoBMP + ".scaled.bmp");
+        Bitmap bmpResized = null;
 
-        Console.WriteLine("Gerando arquivo BIN redimensionado...");
-        bw = Bin.genereteFromBitmap(bmpResized,new FileStream(nomeArquivoBMP + ".scaled.bin", FileMode.Create));
+        Console.WriteLine("Gerando os arquivos redimensionados...");
+        bmpResized = new Bitmap(bmpGray, new Size(dimensao, dimensao));
+        bmpResized.Save(nomeArquivoBMP + ".bw.scaled.bmp");
+        bw = Bin.genereteGrayFromBitmap(bmpResized, new FileStream(nomeArquivoBMP + ".bw.scaled.bin", FileMode.Create));
+        bw.Close();
+        bmpResized.Dispose();
 
+        bmpResized = new Bitmap(bmpColor, new Size(dimensao, dimensao));
+        bmpResized.Save(nomeArquivoBMP + ".cl.scaled.bmp");
+        bw = Bin.genereteColorFromBitmap(bmpResized, new FileStream(nomeArquivoBMP + ".cl.scaled.bin", FileMode.Create));
+        bw.Close();
+        bmpResized.Dispose();
       }
 
       Console.WriteLine("Arquivos gerados com sucesso.");
@@ -91,7 +111,7 @@ namespace cnf2img
 
   class Bin
   {
-    public static BinaryWriter generateFromCNF(CNF cnf, FileStream fs)
+    public static BinaryWriter generateGrayFromCNF(CNF cnf, FileStream fs)
     {
       BinaryWriter bw = new BinaryWriter(fs);
 
@@ -110,7 +130,43 @@ namespace cnf2img
       return bw;
     }
 
-    public static BinaryWriter genereteFromBitmap(Bitmap bmp, FileStream fs)
+    public static BinaryWriter generateColorFromCNF(CNF cnf, FileStream fs) {
+
+      BinaryWriter bw = new BinaryWriter(fs);
+
+      SortedList<int, int> literalList = new SortedList<int, int>();
+
+      // Conta quantos literais para saber o número de pixels e ordena todos para fazer uma distribuição uniforme
+      foreach (Clause c in cnf.lstClauses) {
+        foreach (var l in c.vars) {
+          literalList[l] = 1;
+        }
+      }
+
+      // Percorre todos os bytes de todas as cláusulas e transforma em um pixel
+      foreach (Clause c in cnf.lstClauses) {
+        foreach (var v in c.vars) {
+
+          // Faixa de valores: (24 bits (RGB) / total_literais) * pos_literal
+          int corDistribuida = (0x00FFFFFF / (literalList.Count + 1)) * (literalList.IndexOfKey(v) + 1);
+
+          // Cria o pixel
+          bw.Write((byte)((corDistribuida >> 16) & 0x000000FF));
+          bw.Write((byte)((corDistribuida >>  8) & 0x000000FF));
+          bw.Write((byte)((corDistribuida >>  0) & 0x000000FF));
+        }
+
+        // O \n é a cor preta
+        bw.Write((byte)0);
+        bw.Write((byte)0);
+        bw.Write((byte)0);
+      }
+
+      // Se chegou até aqui é porque o binário foi gerado corretamente
+      return bw;
+    }
+
+    public static BinaryWriter genereteGrayFromBitmap(Bitmap bmp, FileStream fs)
     {
       BinaryWriter bw = new BinaryWriter(fs);
 
@@ -126,11 +182,30 @@ namespace cnf2img
       // Se chegou até aqui é porque o binário foi geado corretamete
       return bw;
     }
+
+    public static BinaryWriter genereteColorFromBitmap(Bitmap bmp, FileStream fs) {
+
+
+      BinaryWriter bw = new BinaryWriter(fs);
+
+      for (int y = 0; y < bmp.Height; y++) {
+        for (int x = 0; x < bmp.Width; x++) {
+          Color c = bmp.GetPixel(x, y);
+          bw.Write(c.R);
+          bw.Write(c.G);
+          bw.Write(c.B);
+        }
+      }
+
+      // Se chegou até aqui é porque o binário foi geado corretamete
+      return bw;
+    }
+
   }
 
   class Bmp
   {
-    public static Bitmap generateFromCNF(CNF cnf)
+    public static Bitmap generateGrayFromCNF(CNF cnf)
     {
       int width = (int)Math.Ceiling(Math.Sqrt(cnf.NumBytes + cnf.lstClauses.Count));
       Bitmap bmp = new Bitmap(width, width);
@@ -173,6 +248,59 @@ namespace cnf2img
       // Se chegou até aqui é porque o BMP foi gerado corretamente
       return bmp;
     }
+
+    public static Bitmap generateColorFromCNF(CNF cnf) {
+
+      SortedList<int, int> literalList = new SortedList<int, int>();
+
+      // Conta quantos literais para saber o número de pixels e ordena todos para fazer uma distribuição uniforme
+      int nPixels = 0;
+      foreach(Clause c in cnf.lstClauses) {
+        nPixels += c.vars.Length + 1;
+        foreach (var l in c.vars) {
+          literalList[l] = 1;
+        }
+      }
+
+      // Calcula a largura
+      int width = (int)Math.Ceiling(Math.Sqrt(nPixels));
+      Bitmap bmp = new Bitmap(width, width);
+      int col = 0;
+      int row = 0;
+
+      // Percorre todos os bytes de todas as cláusulas e transforma em um pixel
+      foreach (Clause c in cnf.lstClauses) {
+
+        foreach(var v in c.vars) {
+
+          // Faixa de valores: (24 bits (RGB) / total_literais) * pos_literal
+          int corDistribuida = (0x00FFFFFF / (literalList.Count + 1)) * (literalList.IndexOfKey(v) + 1);
+
+          // Cria o pixel
+          bmp.SetPixel(col++, row, Color.FromArgb(255, (corDistribuida >> 16) & 0x000000FF, 
+                                                       (corDistribuida >>  8) & 0x000000FF,
+                                                       (corDistribuida >>  0) & 0x000000FF));
+
+          // Verifica se já completou a largura... se sim, passa para próxima linha
+          if (col == width) {
+            col = 0;
+            row++;
+          }
+        }
+
+        // Adiciona uma quebra de linha (pixel preto)
+        bmp.SetPixel(col++, row, Color.FromArgb(255, 0, 0, 0));
+
+        // Verifica se já completou a largura... se sim, passa para próxima linha
+        if (col == width) {
+          col = 0;
+          row++;
+        }
+      }
+
+      // Se chegou até aqui é porque o BMP foi gerado corretamente
+      return bmp;
+    }
   }
 
   /**
@@ -190,6 +318,8 @@ namespace cnf2img
     public uint NumClauses { get; }
     // Lista de cláusulas
     public List<Clause> lstClauses { get; }
+    // Mapa de literais
+    public Dictionary<int, int> mapLiterals { get; }
     // Número de bytes de todas as cláusulas
     public long NumBytes { get; }
     #endregion
@@ -227,6 +357,9 @@ namespace cnf2img
       // Inicialmente, nenhum byte carregado
       this.NumBytes = 0;
 
+      // Mapa de literais
+      this.mapLiterals = new Dictionary<int, int>();
+
       // Varre o arquivo
       using(StreamReader sr = new StreamReader(filename))
       {
@@ -258,6 +391,14 @@ namespace cnf2img
             default:
               Clause c = new Clause(line);
               lstClauses.Add(c);
+              foreach(var v in c.vars) {
+                if (this.mapLiterals.ContainsKey(v)) {
+                  this.mapLiterals[v]++;
+                } else {
+                  this.mapLiterals[v] = 1;
+                }
+              }
+
               this.NumBytes += c.ascii.Length;
               break;
           }
